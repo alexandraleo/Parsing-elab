@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from random import randrange
 import csv
-import requests
+# import requests
 
 # ARTS = "E-AB-65896, E-AB-65844, E-AB-62136, E-AB-19675, E-AB-15566, E-AB-16323, E-AB-18660, E-AB-14885, E-AB-13160"
 
@@ -89,10 +89,10 @@ def get_art_structure(soup, art):
                 continue
             else:
                 volumes.append(volume[:i])
-                volume_units.append(volume[i:].replace("μ", "u"))
+                volume_units.append(volume[i:].replace("μ", "u").lower())
                 break
     prices = [price["data-price"].strip() for price in volume_con.find_all("li")]
-    antigen = soup.find("td", string="Abbre").find_next_sibling("td").get_text()
+    antigen = soup.find("td", string="Abbre").find_next_sibling("td").get_text().strip()
     base_info_cont = soup.find("div", class_="base_info").find_all("li")
     cat_no = art
     reactivity = ""
