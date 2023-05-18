@@ -4,7 +4,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 from bs4 import BeautifulSoup
-import html5lib
+# import html5lib
 import lxml
 import re
 import time
@@ -39,7 +39,7 @@ def get_art_page(driver, art):
     try:
         driver.find_element(By.CLASS_NAME, "products_box").find_element(By.TAG_NAME, "a").click()
     except:
-        print('can`t find a for art ' + art)
+        print('can`t find tag a for art ' + art)
     time.sleep(7)
     driver.switch_to.window(driver.window_handles[1])
     return driver.page_source
@@ -62,7 +62,9 @@ def get_art_structure(soup, art):
     application_dict = {
         "WB": "вестерн-блоттинга",
         "IHC": "иммуногистохимии",
+        "IHC-P": "иммуногистохимии на парафиновых срезах",
         "IF/ICC": "иммунофлуоресцентного/иммуноцитохимического анализа",
+        "IF": "иммунофлуоресцентного анализа",
         "IP": "иммунопреципитации",
         "ChIP": "иммунопреципитации хроматина",
         "ChIP-seq": "иммунопреципитации хроматина и высокоэффективного секвенирования",
@@ -110,8 +112,7 @@ def get_art_structure(soup, art):
             appls = li.get_text()[len("Applications:"):].strip()
         else:
             print("no info")
-    appls_ru = ", ".join([application_dict.get(w, w) for w in appls.split(",")])
-    reactivity_ru = ", ".join([reactivity_dict.get(w, w) for w in reactivity.split(",")])
+    reactivity_ru = ", ".join([reactivity_dict.get(w.strip(), w.strip()) for w in reactivity.split(",")])
     try:
         clonality = soup.find("td", string="Clonality").find_next_sibling("td").get_text()
     except:
@@ -129,11 +130,24 @@ def get_art_structure(soup, art):
             for i in range(0, len(dilus_cl), 2):
                 appl_dilus = " ".join(dilus_cl[i:i+2])
                 dilutions.append(appl_dilus)
+                # print(appl_dilus)
+                if "IHC-P" in appl_dilus:
+                    ihc_dilut = appl_dilus[appl_dilus.find("IHC-P") + 6 :]
+                    ihc_dilut_text = "иммуногистохимии на парафиновых срезах (рекомендуемое разведение " + ihc_dilut + ")"
+                    application_dict["IHC-P"] = ihc_dilut_text
+                elif "IHC" in appl_dilus:
+                    # print("IHC found")
+                    ihc_dilut = appl_dilus[appl_dilus.find("IHC") + 4 :]
+                    ihc_dilut_text = "иммуногистохимии (рекомендуемое разведение " + ihc_dilut + ")"
+                    # print(ihc_dilut_text)
+                    application_dict["IHC"] = ihc_dilut_text
+                    # print(application_dict["IHC"])
         else:
             dilutions.extend(dilus_cl)
     except:
         print('An exception occurred')
     text = ("\n").join(dilutions) + "\n" + reactivity
+    appls_ru = ", ".join([application_dict.get(w.strip(), w.strip()) for w in appls.split(",")])
     conjug = soup.find("td", string="Conjugation").find_next_sibling("td").get_text().strip()
     storage = soup.find("td", string="Storage").find_next_sibling("td").get_text().strip()
     storage_buff = soup.find("td", string="Buffer").find_next_sibling("td").get_text().strip()
@@ -142,9 +156,7 @@ def get_art_structure(soup, art):
     dict_art_list = []
     for i in range(0, len(volumes)):
         dict_art = {
-            # "Article": art,
             "Article": cat_no,
-            # "CatNo": cat_no,
             "Volume": volumes[i],
             "Volume units": volume_units[i],
             "Antigen": antigen,
@@ -172,7 +184,7 @@ def get_art_structure(soup, art):
 def write_csv(result):
     date = datetime.now().strftime('%d.%m.%Y_%H.%M')
     # columns = set(i for d in result for i in d)
-    with open("data\\Elabscience_{}.csv".format(date), "w", encoding="utf-8", newline="") as f:
+    with open("data-elab\\Elabscience_{}.csv".format(date), "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=result[0].keys())
         writer.writeheader()
         writer.writerows(result)
@@ -182,9 +194,11 @@ def get_articles_list():
     articles = [str(art) for art in input().split(",")]
     return articles
 
+# TODO strip art
 
 
-service = Service("C:\\Users\\shurshun_4ik\\AppData\\Local\\Programs\\Python\\chromedriver.exe")
+
+service = Service("C:\\Users\\Public\\Parsing programs\\chromedriver.exe")
 options = webdriver.ChromeOptions()
 options.add_argument("--disable-extensions")
 # options.add_argument("--disable-gpu")
