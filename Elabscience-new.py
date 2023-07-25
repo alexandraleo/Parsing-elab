@@ -35,12 +35,24 @@ def get_art_page(driver, art):
 
     time.sleep(2)
     driver.find_element(By.ID, "keywords").send_keys(art + Keys.ENTER)
-    time.sleep(5)
+    time.sleep(3)
     try:
+        cards = driver.find_elements(By.CLASS_NAME, "products_box")
+        # for card in cards.find_element(By.TAG_NAME, "a")
+        if len(cards) > 1:
+            print("Кол-во карточек больше 1: ", len(cards))
         driver.find_element(By.CLASS_NAME, "products_box").find_element(By.TAG_NAME, "a").click()
     except:
         print('can`t find tag a for art ' + art)
-    time.sleep(7)
+
+    # TODO обработка несуществующих артикулов E-AB-66377
+    # TODO ihc dilution with , and without
+    # TODO E-AB-40052 10:50-1:10
+    # TODO E-AB-66167 no antigen
+    # TODO concentrated and rtu
+    #
+
+    time.sleep(5)
     driver.switch_to.window(driver.window_handles[1])
     return driver.page_source
 
@@ -56,13 +68,24 @@ def get_art_structure(soup, art):
     reactivity_dict = {
         "H": "человек",
         "M": "мышь",
-        "R": "крыса"
+        "R": "крыса",
+        "Mk": "обезьяна",
+        "Dg": "собака",
+        "Ch": "курица",
+        "Hm": "хомяк",
+        "Rb": "кролик",
+        "Sh": "овца",
+        "Pg": "свинья",
+        "Z": "Данио",
+        "X": "Ксенопус",
+        "C": "корова"
     }
 
     application_dict = {
         "WB": "вестерн-блоттинга",
         "IHC": "иммуногистохимии",
         "IHC-P": "иммуногистохимии на парафиновых срезах",
+        "IHC-p": "иммуногистохимии на парафиновых срезах",
         "IF/ICC": "иммунофлуоресцентного/иммуноцитохимического анализа",
         "IF": "иммунофлуоресцентного анализа",
         "IP": "иммунопреципитации",
@@ -70,6 +93,7 @@ def get_art_structure(soup, art):
         "ChIP-seq": "иммунопреципитации хроматина и высокоэффективного секвенирования",
         "RIP": "иммунопреципитации РНК",
         "FC": "проточной цитометрии",
+        "FCM": "проточной цитометрии",
         "FC(Intra)": "проточной цитометрии (Intra)",
         "ELISA": "ИФА",
         "MeDIP": "иммунопреципитации метилированной ДНК",
@@ -82,19 +106,40 @@ def get_art_structure(soup, art):
     }
 
     volume_con = soup.find("ul", class_="mid_xial")
-    volumes_f = [volume.get_text().strip() for volume in volume_con.find_all("li")]
     volumes = []
     volume_units = []
-    for volume in volumes_f:
-        for i in range(0, len(volume)):
-            if volume[i].isdigit():
-                continue
-            else:
-                volumes.append(volume[:i])
-                volume_units.append(volume[i:].replace("μ", "u").lower())
-                break
-    prices = [price["data-price"].strip() for price in volume_con.find_all("li")]
-    antigen = soup.find("td", string="Abbre").find_next_sibling("td").get_text().strip()
+    prices = []
+    if volume_con:
+        volumes_f = [volume.get_text().strip() for volume in volume_con.find_all("li")]
+        prices = [price["data-price"].strip() for price in volume_con.find_all("li")]
+        for volume in volumes_f:
+            for i in range(0, len(volume)):
+                if volume[i].isdigit():
+                    continue
+                else:
+                    volumes.append(volume[:i])
+                    volume_units.append(volume[i:].replace("μ", "u").lower())
+                    break
+    else:
+        print("No volumes and prices")
+
+    antigen_con = soup.find("td", string="Abbre")
+    title_path = soup.find("div", class_="details01").find("h1")
+    alt_info_con = soup.find("div", class_="pro_b02_btm")
+    if antigen_con:
+        antigen = antigen_con.find_next_sibling("td").get_text().strip()
+    elif title_path:
+        title_txt = title_path.get_text().strip()
+        if "monoclonal" in title_txt.lower():
+            clonality = "Monoclonal"
+        elif "polyclonal" in title_txt.lower():
+            clonality = "Polyclonal"
+        else:
+            clonality = ""
+        antigen = title_txt[:title_txt.find(clonality)].strip()
+    else:
+        print("No antigen")
+        antigen = ""
     base_info_cont = soup.find("div", class_="base_info").find_all("li")
     cat_no = art
     reactivity = ""
@@ -113,45 +158,87 @@ def get_art_structure(soup, art):
         else:
             print("no info")
     reactivity_ru = ", ".join([reactivity_dict.get(w.strip(), w.strip()) for w in reactivity.split(",")])
-    try:
-        clonality = soup.find("td", string="Clonality").find_next_sibling("td").get_text()
-    except:
-        clonality = "Polyclonal"
-    try:
-        clone = soup.find("td", string="Clone No.").find_next_sibling("td").get_text()[len("Clone:"):]
-    except:
+
+    clonality_con = soup.find("td", string="Clonality")
+    clone_con = soup.find("td", string="Clone No.")
+    if clonality_con:
+        clonality = clonality_con.find_next_sibling("td").get_text()
+    else:
+        if clone_con:
+            clonality = "Monoclonal"
+        else:
+            clonality = "Polyclonal"
+
+    if clone_con:
+        clone_txt = clone_con.find_next_sibling("td").get_text().strip()
+        # print(clone_txt)
+        if "Clone:" in clone_txt:
+            clone = clone_txt[clone_txt.find("Clone:"):]
+        elif "(See Other Available Formats)" in clone_txt:
+            clone = clone_txt[:clone_txt.find("(See Other Available Formats)")]
+        else:
+            clone = clone_txt
+    else:
         clone = ""
+
     title = soup.find("div", class_="details01").find("h1").get_text().strip()
     dilutions = []
-    try:
-        dilus = soup.find("h4", string="Dilution").find_next_sibling("p").get_text()
+    dilus_con = soup.find("h4", string="Dilution")
+    ihc_dilut = ""
+    if dilus_con:
+        dilus = dilus_con.find_next_sibling("p").get_text()
         dilus_cl = re.sub(r'\s+', ' ', dilus).split(" ")
         if len(dilus_cl) // 2:
             for i in range(0, len(dilus_cl), 2):
                 appl_dilus = " ".join(dilus_cl[i:i+2])
                 dilutions.append(appl_dilus)
-                # print(appl_dilus)
+
                 if "IHC-P" in appl_dilus:
-                    ihc_dilut = appl_dilus[appl_dilus.find("IHC-P") + 6 :]
-                    ihc_dilut_text = "иммуногистохимии на парафиновых срезах (рекомендуемое разведение " + ihc_dilut + ")"
-                    application_dict["IHC-P"] = ihc_dilut_text
+                    ihc_dilut = appl_dilus[appl_dilus.find("IHC-P") + 6 : appl_dilus.find(",")]
                 elif "IHC" in appl_dilus:
-                    # print("IHC found")
-                    ihc_dilut = appl_dilus[appl_dilus.find("IHC") + 4 :]
-                    ihc_dilut_text = "иммуногистохимии (рекомендуемое разведение " + ihc_dilut + ")"
-                    # print(ihc_dilut_text)
-                    application_dict["IHC"] = ihc_dilut_text
-                    # print(application_dict["IHC"])
+                    ihc_dilut = appl_dilus[appl_dilus.find("IHC") + 4 : appl_dilus.find(",")]
+                elif "IHC-p" in appl_dilus:
+                    ihc_dilut = appl_dilus[appl_dilus.find("IHC-p") + 6 : appl_dilus.find(",")]
         else:
             dilutions.extend(dilus_cl)
-    except:
-        print('An exception occurred')
-    text = ("\n").join(dilutions) + "\n" + reactivity
+    else:
+        print('No dilus')
+        dilutions = []
+    # print(ihc_dilut)
+    if len(ihc_dilut) > 0:
+        application_dict["IHC-P"] = "иммуногистохимии на парафиновых срезах (рекомендуемое разведение " + ihc_dilut + ")"
+        application_dict["IHC"] = "иммуногистохимии (рекомендуемое разведение " + ihc_dilut + ")"
+        application_dict["IHC-p"] = "иммуногистохимии на парафиновых срезах (рекомендуемое разведение " + ihc_dilut + ")"
+
+    if len(dilutions) > 0:
+        text = ("\n").join(dilutions) + "\n" + reactivity
+    else:
+        text = appls + "\n" + reactivity
     appls_ru = ", ".join([application_dict.get(w.strip(), w.strip()) for w in appls.split(",")])
-    conjug = soup.find("td", string="Conjugation").find_next_sibling("td").get_text().strip()
-    storage = soup.find("td", string="Storage").find_next_sibling("td").get_text().strip()
-    storage_buff = soup.find("td", string="Buffer").find_next_sibling("td").get_text().strip()
-    conc = soup.find("td", string="Concentration").find_next_sibling("td").get_text().strip()
+    conjug_con = soup.find("td", string="Conjugation")
+    if conjug_con:
+        conjug = conjug_con.find_next_sibling("td").get_text().strip()
+        if conjug == "Unconjugated":
+            conjug = ""
+    else:
+        conjug = ""
+    storage_con = soup.find("td", string="Storage")
+    if storage_con:
+        storage = storage_con.find_next_sibling("td").get_text().strip()
+    else:
+        storage =""
+
+    storage_buff_con = soup.find("td", string="Buffer")
+    if storage_buff_con:
+        storage_buff = storage_buff_con.find_next_sibling("td").get_text().strip()
+    else:
+        storage_buff = ""
+
+    conc_con = soup.find("td", string="Concentration")
+    if conc_con:
+        conc = conc_con.find_next_sibling("td").get_text().strip()
+    else:
+        conc = ""
 
     dict_art_list = []
     for i in range(0, len(volumes)):
@@ -166,12 +253,12 @@ def get_art_structure(soup, art):
             "Text": text,
             "Applications_ru": appls_ru,
             "Reactivity_ru": reactivity_ru,
+            "Conjugation": conjug,
             "Title": title,
             "Applications": appls,
             "Dilutions": dilutions,
             "Reactivity": reactivity,
             # "Form": form,
-            "Conjugation": conjug,
             "Storage instructions": storage,
             "Storage buffer": storage_buff,
             "Concentration": conc,
@@ -191,11 +278,8 @@ def write_csv(result):
 
 def get_articles_list():
     print("Введите список артикулов:")
-    articles = [str(art) for art in input().split(",")]
+    articles = [str(art).strip() for art in input().split(",")]
     return articles
-
-# TODO strip art
-
 
 
 service = Service("C:\\Users\\Public\\Parsing programs\\chromedriver.exe")
@@ -203,6 +287,7 @@ options = webdriver.ChromeOptions()
 options.add_argument("--disable-extensions")
 # options.add_argument("--disable-gpu")
 options.add_argument("--headless")
+options.add_argument("--window-size=1920,1080")
 options.add_argument("--ignore-certificate-errors-spki-list")
 options.add_argument("--ignore-ssl-errors")
 options.add_argument("--disable-infobars")
