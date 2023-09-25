@@ -14,6 +14,7 @@ import csv
 # import requests
 
 # ARTS = "E-AB-65896, E-AB-65844, E-AB-62136, E-AB-19675, E-AB-15566, E-AB-16323, E-AB-18660, E-AB-14885, E-AB-13160"
+# PA6025R, PA6937, PA6931, PA7179, PA6928
 
 SITE_URL = "https://www.elabscience.com/"
 # SITE_URL = "https://www.elabscience.com/p-syndecan_1_polyclonal_antibody-389148.html"
@@ -31,30 +32,49 @@ SITE_URL = "https://www.elabscience.com/"
 #         src = file.read()
 #     return src
 
-def get_art_page(driver, art):
+def get_art_page(driver, art, manuals):
 
     time.sleep(2)
     driver.find_element(By.ID, "keywords").send_keys(art + Keys.ENTER)
     time.sleep(3)
-    try:
-        cards = driver.find_elements(By.CLASS_NAME, "products_box")
-        # for card in cards.find_element(By.TAG_NAME, "a")
-        if len(cards) > 1:
-            print("Кол-во карточек больше 1: ", len(cards))
-        driver.find_element(By.CLASS_NAME, "products_box").find_element(By.TAG_NAME, "a").click()
-    except:
-        print('can`t find tag a for art ' + art)
+    # try:
+    cards = driver.find_elements(By.CLASS_NAME, "products_box")
+    if cards:
+        count = 0
+        for card in cards:
+            card_art = card.find_element(By.CLASS_NAME, "cat").text
+            if card_art.strip() == art.strip():
+                count += 1
+                card.find_element(By.TAG_NAME, "h2").find_element(By.TAG_NAME, "a").click()
+                time.sleep(5)
+                driver.switch_to.window(driver.window_handles[1])
+                if manuals:
+                    manual_btn = driver.find_element(By.LINK_TEXT, "Manual")
+                    if manual_btn:
+                        manual_btn.click()
+                        time.sleep(1)
+                    else:
+                        print("No manual btn")
+                return driver.page_source
+            else:
+                continue
+        if count == 0:
+            print("No art in list")
 
-    # TODO обработка несуществующих артикулов E-AB-66377
+    else:
+        print("No position, art N", art)
+
+    # except:
+    #     print('can`t find tag a for art ' + art)
+
+
     # TODO ihc dilution with , and without
-    # TODO E-AB-40052 10:50-1:10
     # TODO E-AB-66167 no antigen
     # TODO concentrated and rtu
+    # TODO E-AB-66397 перенос разведения на другую строку?..
     #
+    # PA6700, PA6566, PA6606, PA6568
 
-    time.sleep(5)
-    driver.switch_to.window(driver.window_handles[1])
-    return driver.page_source
 
 def get_soup(html):
     try:
@@ -67,8 +87,11 @@ def get_art_structure(soup, art):
     # art = article
     reactivity_dict = {
         "H": "человек",
+        "Human": "человек",
         "M": "мышь",
+        "Mouse": "мышь",
         "R": "крыса",
+        "Rat": "крыса",
         "Mk": "обезьяна",
         "Dg": "собака",
         "Ch": "курица",
@@ -125,7 +148,7 @@ def get_art_structure(soup, art):
 
     antigen_con = soup.find("td", string="Abbre")
     title_path = soup.find("div", class_="details01").find("h1")
-    alt_info_con = soup.find("div", class_="pro_b02_btm")
+    # alt_info_con = soup.find("div", class_="pro_b02_btm")
     if antigen_con:
         antigen = antigen_con.find_next_sibling("td").get_text().strip()
     elif title_path:
@@ -140,24 +163,44 @@ def get_art_structure(soup, art):
     else:
         print("No antigen")
         antigen = ""
-    base_info_cont = soup.find("div", class_="base_info").find_all("li")
+    base_info_cont = soup.find("div", class_="base_info")
+    host = ""
+    reactivity_ru = ""
     cat_no = art
     reactivity = ""
-    host = ""
-    appls =""
+    appls = ""
+    if base_info_cont:
+        reactivity = ""
+        base_info_li = base_info_cont.find_all("li")
+        for li in base_info_li:
+            if li.get_text().startswith("Cat.No.:"):
+                cat_no = li.get_text()[len("Cat.No.:"):].strip()
+            elif li.get_text().startswith("Reactivity:"):
+                reactivity = li.get_text()[len("Reactivity:"):].strip()
+            elif li.get_text().startswith("Host:"):
+                host = li.get_text()[len("Host:"):].strip()
+            elif li.get_text().startswith("Applications:"):
+                appls = li.get_text()[len("Applications:"):].strip()
+            else:
+                print("no info")
+    else:
+        info_cont = soup.find("div", class_="pro_box02")
+        if info_cont:
+            info_p = info_cont.find_all("p")
+            if len(info_p) > 0:
+                for p in info_p:
+                    if p.get_text().startswith("Reactivity: "):
+                        reactivity = p.get_text()[len("Reactivity: "):].strip()
+                        print(reactivity)
+                    elif p.get_text().startswith(" Applications: "):
+                        appls = p.get_text()[len(" Applications: "):].strip()
+                        print(appls)
+        host_con = soup.find("td", string="Source")
+        if host_con:
+            host = host_con.find_next_sibling("td").get_text().strip()
 
-    for li in base_info_cont:
-        if li.get_text().startswith("Cat.No.:"):
-            cat_no = li.get_text()[len("Cat.No.:"):].strip()
-        elif li.get_text().startswith("Reactivity:"):
-            reactivity = li.get_text()[len("Reactivity:"):].strip()
-        elif li.get_text().startswith("Host:"):
-            host = li.get_text()[len("Host:"):].strip()
-        elif li.get_text().startswith("Applications:"):
-            appls = li.get_text()[len("Applications:"):].strip()
-        else:
-            print("no info")
-    reactivity_ru = ", ".join([reactivity_dict.get(w.strip(), w.strip()) for w in reactivity.split(",")])
+    if len(reactivity) > 0:
+        reactivity_ru = ", ".join([reactivity_dict.get(w.strip(), w.strip()) for w in reactivity.split(",")])
 
     clonality_con = soup.find("td", string="Clonality")
     clone_con = soup.find("td", string="Clone No.")
@@ -188,17 +231,31 @@ def get_art_structure(soup, art):
     if dilus_con:
         dilus = dilus_con.find_next_sibling("p").get_text()
         dilus_cl = re.sub(r'\s+', ' ', dilus).split(" ")
-        if len(dilus_cl) // 2:
+        # print("dilus_cl", dilus_cl)
+        if len(dilus_cl) // 2 and len(dilus_cl) > 2:
             for i in range(0, len(dilus_cl), 2):
                 appl_dilus = " ".join(dilus_cl[i:i+2])
                 dilutions.append(appl_dilus)
-
+                # print("appl_dilus", appl_dilus)
                 if "IHC-P" in appl_dilus:
                     ihc_dilut = appl_dilus[appl_dilus.find("IHC-P") + 6 : appl_dilus.find(",")]
                 elif "IHC" in appl_dilus:
                     ihc_dilut = appl_dilus[appl_dilus.find("IHC") + 4 : appl_dilus.find(",")]
                 elif "IHC-p" in appl_dilus:
                     ihc_dilut = appl_dilus[appl_dilus.find("IHC-p") + 6 : appl_dilus.find(",")]
+                # print("ihc_dilut", ihc_dilut)
+        elif len(dilus_cl) // 2 and len(dilus_cl) == 2:
+            for i in range(0, len(dilus_cl), 2):
+                appl_dilus = " ".join(dilus_cl[i:i+2])
+                dilutions.append(appl_dilus)
+                # print("appl_dilus", appl_dilus)
+                if "IHC-P" in appl_dilus:
+                    ihc_dilut = appl_dilus[appl_dilus.find("IHC-P") + 6 : ]
+                elif "IHC" in appl_dilus:
+                    ihc_dilut = appl_dilus[appl_dilus.find("IHC") + 4 : ]
+                elif "IHC-p" in appl_dilus:
+                    ihc_dilut = appl_dilus[appl_dilus.find("IHC-p") + 6 : ]
+                # print("ihc_dilut", ihc_dilut)
         else:
             dilutions.extend(dilus_cl)
     else:
@@ -281,6 +338,16 @@ def get_articles_list():
     articles = [str(art).strip() for art in input().split(",")]
     return articles
 
+def manual_dwld():
+    print("Нужно скачивать инструкции? y/n")
+    flag = False
+    if input() == "y":
+        flag = True
+        print("Ок, скачиваю")
+    else:
+        print("Ок, не качаю")
+    return flag
+
 
 service = Service("C:\\Users\\Public\\Parsing programs\\chromedriver.exe")
 options = webdriver.ChromeOptions()
@@ -294,6 +361,13 @@ options.add_argument("--disable-infobars")
 options.add_argument('--log-level=3')
 options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36")
+options.add_experimental_option("prefs", {
+  "download.default_directory": r"C:\Users\Public\Parsing programs\Elab\elab-manuals\\",
+  "download.prompt_for_download": False,
+  "download.directory_upgrade": True,
+  "safebrowsing.enabled": True,
+  "plugins.always_open_pdf_externally": True
+})
 
 driver = webdriver.Chrome(service=service, options=options)
 driver.maximize_window()
@@ -318,6 +392,7 @@ try:
     # src = get_data(SITE_URL)
     # src = driver.page_source ???
     arts = get_articles_list()
+    manuals = manual_dwld()
     start_time = datetime.now()
     result = []
     counter = 0
@@ -325,12 +400,38 @@ try:
         # Close a form?
         counter += 1
         print(counter, " art No ", art)
-        src = get_art_page(driver, art)
-        soup = get_soup(src)
-        art_info = get_art_structure(soup, art)
+        src = get_art_page(driver, art, manuals)
+        if src:
+            soup = get_soup(src)
+            art_info = get_art_structure(soup, art)
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])
+        else:
+            art_card = {
+                "Article": art.strip(),
+                "Volume": [],
+                "Volume units": [],
+                "Antigen": "",
+                "Host": "",
+                "Clonality": "",
+                "Clone_num": "",
+                "Text": "",
+                "Applications_ru": "",
+                "Reactivity_ru": "",
+                "Conjugation": "",
+                "Title": "",
+                "Applications": "",
+                "Dilutions": "",
+                "Reactivity": "",
+                # "Form": form,
+                "Storage instructions": "",
+                "Storage buffer": "",
+                "Concentration": "",
+                "Price": [],
+            }
+            art_info = []
+            art_info.append(art_card)
         result.extend(art_info)
-        driver.close()
-        driver.switch_to.window(driver.window_handles[0])
     # print(result)
     write_csv(result)
     finish_time = datetime.now()
